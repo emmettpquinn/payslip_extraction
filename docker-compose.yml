@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  payslip_extraction:
+    build: ./app
+    image: payslip_extraction_app
+    container_name: payslip_extraction_app
+    volumes:
+      - ./app/processed_emails.json:/app/processed_emails.json
+      - ./app/.env:/app/.env
+      - ./app/credentials.json:/app/credentials.json
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+    tty: true
+    stdin_open: true

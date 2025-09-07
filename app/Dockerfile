@@ -10,9 +10,11 @@ RUN pip install poetry && \
     poetry config virtualenvs.create false && \
     poetry install --only=main --no-root
 
-# Copy app code
+
+# Copy app code and .env file
 COPY main.py /app/
 COPY credentials.json /app/
+COPY .env /app/
 
 # Environment variable for Google credentials JSON path inside container
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json

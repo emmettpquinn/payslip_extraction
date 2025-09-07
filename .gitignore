@@ -1,3 +1,4 @@
 app/credentials.json
 app/processed_emails.json
 app/.env
+processed_emails.json
