@@ -17,8 +17,8 @@ EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
 PDF_PASSWORD = os.getenv('PDF_PASSWORD')
 GOOGLE_CREDENTIALS_JSON = os.path.join(os.path.dirname(__file__), 'credentials.json')
 SPREADSHEET_URL = os.getenv('SPREADSHEET_URL')
-PROCESSED_UID_FILE = os.path.join(os.path.dirname(__file__), "processed_emails.json")
-PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
+PROCESSED_UID_FILE = os.path.join(os.path.dirname(__file__), "procePERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
+ actual key to repo
 
 import json
 def load_processed_uids():
@@ -192,7 +192,7 @@ def main_loop():
         today = now.weekday()
         # If weekend, sleep until next Monday
         if today > 4:
-            days_until_monday = 7 - todayp
+            days_until_monday = 7 - today
             next_run = (now + timedelta(days=days_until_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
             sleep_seconds = (next_run - now).total_seconds()
             print(f"[Status] Weekend. Sleeping until next Monday ({next_run}) for {int(sleep_seconds)} seconds.")
