@@ -16,9 +16,10 @@ EMAIL_ACCOUNT = os.getenv('EMAIL_ACCOUNT')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
 PDF_PASSWORD = os.getenv('PDF_PASSWORD')
 GOOGLE_CREDENTIALS_JSON = os.path.join(os.path.dirname(__file__), 'credentials.json')
+
 SPREADSHEET_URL = os.getenv('SPREADSHEET_URL')
-PROCESSED_UID_FILE = os.path.join(os.path.dirname(__file__), "procePERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
- actual key to repo
+PROCESSED_UID_FILE = os.path.join(os.path.dirname(__file__), "processed_emails.json")
+PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 
 import json
 def load_processed_uids():
