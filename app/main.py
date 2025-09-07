@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import re
 import time
 import requests
@@ -9,14 +10,15 @@ from PyPDF2 import PdfReader
 import gspread
 from google.oauth2.service_account import Credentials
 
-IMAP_SERVER = 'imap.mail.me.com'
-EMAIL_ACCOUNT = 'emmettpquinn@icloud.com'
-EMAIL_PASSWORD = 'wdns-lgri-kyfh-urhc'
-PDF_PASSWORD = "1146"
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+IMAP_SERVER = os.getenv('IMAP_SERVER')
+EMAIL_ACCOUNT = os.getenv('EMAIL_ACCOUNT')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
+PDF_PASSWORD = os.getenv('PDF_PASSWORD')
 GOOGLE_CREDENTIALS_JSON = os.path.join(os.path.dirname(__file__), 'credentials.json')
-SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/12gQ_zj0xbH0meQ4o4sKv4wrXUruoejIWIqUCor9wN9Q/edit?gid=1017245459'
+SPREADSHEET_URL = os.getenv('SPREADSHEET_URL')
 PROCESSED_UID_FILE = os.path.join(os.path.dirname(__file__), "processed_emails.json")
-PERPLEXITY_API_KEY = "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"  # Insert your key or use env
+PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 
 import json
 def load_processed_uids():
@@ -196,10 +198,10 @@ def main_loop():
             print(f"[Status] Weekend. Sleeping until next Monday ({next_run}) for {int(sleep_seconds)} seconds.")
             time.sleep(sleep_seconds)
             continue
-        EMAIL_ACCOUNT_ENV = os.environ.get('EMAIL_ACCOUNT', EMAIL_ACCOUNT)
-        EMAIL_PASSWORD_ENV = os.environ.get('EMAIL_PASSWORD', EMAIL_PASSWORD)
-        PDF_PASSWORD_ENV = os.environ.get('PDF_PASSWORD', PDF_PASSWORD)
-        IMAP_SERVER_ENV = os.environ.get('IMAP_SERVER', IMAP_SERVER)
+        EMAIL_ACCOUNT_ENV = EMAIL_ACCOUNT
+        EMAIL_PASSWORD_ENV = EMAIL_PASSWORD
+        PDF_PASSWORD_ENV = PDF_PASSWORD
+        IMAP_SERVER_ENV = IMAP_SERVER
         FOLDERS = ['INBOX', '1. Payslips']
         if not all([EMAIL_ACCOUNT_ENV, EMAIL_PASSWORD_ENV, PDF_PASSWORD_ENV]):
             print("[Status] ERROR: Missing required configuration.")

@@ -1,1 +1,3 @@
-credentiasls.json
+app/credentials.json
+app/processed_emails.json
+app/.env
