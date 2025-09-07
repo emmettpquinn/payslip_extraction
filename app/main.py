@@ -192,7 +192,7 @@ def main_loop():
         today = now.weekday()
         # If weekend, sleep until next Monday
         if today > 4:
-            days_until_monday = 7 - today
+            days_until_monday = 7 - todayp
             next_run = (now + timedelta(days=days_until_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
             sleep_seconds = (next_run - now).total_seconds()
             print(f"[Status] Weekend. Sleeping until next Monday ({next_run}) for {int(sleep_seconds)} seconds.")
