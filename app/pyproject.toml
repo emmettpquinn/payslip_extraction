@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "payslip-extractor"
 version = "0.1.0"
-description = "Continuously extract payslip data from iCloud email and upload to Google Sheets"
+description = "Carry out a daily scan (On Weekdays) for emails from payslip providers and upload to Google Sheets"
 authors = ["Your Name <youremail@example.com>"]
 license = "MIT"
 
@@ -16,6 +16,7 @@ google-api-python-client = "^2.88.0"
 gspread = "^5.7.2"
 regex = "^2023.8.8"
 python-dotenv = "^1.0.0"
+pycryptodome = "^3.20.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

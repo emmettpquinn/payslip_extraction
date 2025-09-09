@@ -28,6 +28,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 IMAP_SERVER = os.getenv('IMAP_SERVER')
 EMAIL_ACCOUNT = os.getenv('EMAIL_ACCOUNT')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
+PAYSLIP_PROVIDER_EMAIL = os.getenv('PAYSLIP_PROVIDER_EMAIL')
 PDF_PASSWORD = os.getenv('PDF_PASSWORD')
 GOOGLE_CREDENTIALS_JSON = os.path.join(os.path.dirname(__file__), 'credentials.json')
 SPREADSHEET_URL = os.getenv('SPREADSHEET_URL')
@@ -107,7 +108,7 @@ def extract_values_with_perplexity(text):
         logger.error("Perplexity API key not set.")
         return {}
     prompt = (
-        "Extract these values from the following Irish payslip text and return as a JSON object with these keys: "
+        "Extract these values from the following payslip text and return as a JSON object with these keys (Ensure you are not extracting cumulative details): "
         "gross_pay, net_pay, tax, prsi, usc, payment_date, payer. "
         "Here is the text:\n" + text
     )
@@ -150,10 +151,21 @@ def append_to_google_sheet(data_dict, email_id, email_date):
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_url(SPREADSHEET_URL)
         sheet = spreadsheet.worksheet('Payslip Email Finder')
+        # Format payment_date as dd/mm/yyyy
+        payment_date_raw = data_dict.get('payment_date', '')
+        payment_date_formatted = payment_date_raw
+        if payment_date_raw:
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%d %B %Y", "%Y/%m/%d", "%m/%d/%Y"):
+                try:
+                    dt = datetime.strptime(payment_date_raw, fmt)
+                    payment_date_formatted = dt.strftime("%d/%m/%Y")
+                    break
+                except Exception:
+                    continue
         row = [
             email_id,
             email_date,
-            data_dict.get('payment_date', ''),
+            payment_date_formatted,
             data_dict.get('payer', ''),
             data_dict.get('gross_pay', ''),
             data_dict.get('tax', ''),
@@ -218,7 +230,7 @@ def main_loop():
         EMAIL_PASSWORD_ENV = EMAIL_PASSWORD
         PDF_PASSWORD_ENV = PDF_PASSWORD
         IMAP_SERVER_ENV = IMAP_SERVER
-        FOLDERS = ['INBOX', '1. Payslips']
+        FOLDERS = ['INBOX', '1. Payslips', 'ABT Systems Payslips']
         if not all([EMAIL_ACCOUNT_ENV, EMAIL_PASSWORD_ENV, PDF_PASSWORD_ENV]):
             logger.error("ERROR: Missing required configuration.")
             return
@@ -227,16 +239,24 @@ def main_loop():
         logger.info(f"Loaded {len(processed_uids)} processed UIDs.")
         since_date = (datetime.now() - timedelta(days=30)).strftime('%d-%b-%Y')
         logger.info(f"Searching for emails since: {since_date}")
+        # Support multiple payslip provider emails
+        payslip_provider_emails = [e.strip() for e in (PAYSLIP_PROVIDER_EMAIL or '').split(',') if e.strip()]
+        if not payslip_provider_emails:
+            logger.error("No payslip provider emails specified in PAYSLIP_PROVIDER_EMAIL.")
+            return
         try:
             with IMAPClient(IMAP_SERVER_ENV) as server:
                 server.login(EMAIL_ACCOUNT_ENV, EMAIL_PASSWORD_ENV)
                 for folder in FOLDERS:
                     try:
                         server.select_folder(folder)
-                        search_criteria = [u'FROM', 'payslips@brightpay.ie', u'SINCE', since_date]
-                        uids = server.search(search_criteria)
-                        new_uids = [uid for uid in uids if str(uid) not in processed_uids]
-                        logger.info(f"EmailSearch: Folder: {folder} | Total: {len(uids)} | New: {len(new_uids)}")
+                        all_uids = set()
+                        for provider_email in payslip_provider_emails:
+                            search_criteria = [u'FROM', provider_email, u'SINCE', since_date]
+                            uids = server.search(search_criteria)
+                            all_uids.update(uids)
+                        new_uids = [uid for uid in all_uids if str(uid) not in processed_uids]
+                        logger.info(f"EmailSearch: Folder: {folder} | Total: {len(all_uids)} | New: {len(new_uids)}")
                         total_new_emails = 0
                         perplexity_success = 0
                         perplexity_error = 0
