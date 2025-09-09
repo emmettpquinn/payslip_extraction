@@ -1,27 +1,41 @@
 import os
+import json
+import logging
 from dotenv import load_dotenv
-import re
-import time
-import requests
 from datetime import datetime, timedelta
 from imapclient import IMAPClient
 import pyzmail
 from PyPDF2 import PdfReader
 import gspread
 from google.oauth2.service_account import Credentials
+import requests
+import re
+import time
 
+# --- Logging Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler("payslip.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# --- Env Loading ---
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 IMAP_SERVER = os.getenv('IMAP_SERVER')
 EMAIL_ACCOUNT = os.getenv('EMAIL_ACCOUNT')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
 PDF_PASSWORD = os.getenv('PDF_PASSWORD')
 GOOGLE_CREDENTIALS_JSON = os.path.join(os.path.dirname(__file__), 'credentials.json')
-
 SPREADSHEET_URL = os.getenv('SPREADSHEET_URL')
 PROCESSED_UID_FILE = os.path.join(os.path.dirname(__file__), "processed_emails.json")
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 
-import json
+
+# --- UID Tracker ---
 def load_processed_uids():
     if not os.path.exists(PROCESSED_UID_FILE):
         return set()
@@ -31,55 +45,50 @@ def load_processed_uids():
             if isinstance(data, list):
                 return set(str(uid) for uid in data)
             else:
-                print("Malformed processed_emails.json, resetting...")
+                logger.error("Malformed processed_emails.json, resetting...")
                 with open(PROCESSED_UID_FILE, 'w', encoding='utf-8') as wf:
                     json.dump([], wf)
                 return set()
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        print("Corrupted processed_emails.json file, resetting...")
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.exception("Corrupted processed_emails.json file, resetting...")
         with open(PROCESSED_UID_FILE, 'w', encoding='utf-8') as f:
             json.dump([], f)
         return set()
 
+
 def save_processed_uid(uid):
-    # Load current UIDs
     uids = []
     if os.path.exists(PROCESSED_UID_FILE):
         try:
             with open(PROCESSED_UID_FILE, 'r', encoding='utf-8') as f:
                 uids = json.load(f)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.exception("Error reading processed_emails.json file.")
             uids = []
     if str(uid) not in map(str, uids):
         uids.append(str(uid))
-        with open(PROCESSED_UID_FILE, 'w', encoding='utf-8') as f:
-            json.dump(uids, f)
+        try:
+            with open(PROCESSED_UID_FILE, 'w', encoding='utf-8') as f:
+                json.dump(uids, f)
+        except Exception as e:
+            logger.exception("Failed to save processed UID.")
 
+
+# --- PDF Extraction ---
 def extract_text_from_pdf(pdf_path, password):
-    print(f"Attempting to decrypt PDF: {pdf_path}")
-    from PyPDF2 import PdfReader, PdfWriter
+    logger.info(f"Attempting to decrypt PDF: {pdf_path}")
     try:
         with open(pdf_path, "rb") as infile:
             reader = PdfReader(infile)
             if reader.is_encrypted:
-                print("PDF is encrypted, attempting to decrypt...")
-                passwords_to_try = [1146, "1146", b"1146"]
-                decrypted = False
-                for pwd in passwords_to_try:
-                    try:
-                        if reader.decrypt(pwd):
-                            print(f"Successfully decrypted with password: {pwd}")
-                            decrypted = True
-                            break
-                        else:
-                            print(f"Failed to decrypt with password: {pwd}")
-                    except Exception as e:
-                        print(f"Error trying password {pwd}: {e}")
-                if not decrypted:
-                    print("Failed to decrypt PDF with any password variant")
+                logger.info("PDF is encrypted, attempting to decrypt...")
+                # Only use provided password
+                if not reader.decrypt(password):
+                    logger.error("Failed to decrypt PDF with provided password.")
                     return None
+                logger.info("PDF decrypted successfully.")
             else:
-                print("PDF is not encrypted.")
+                logger.info("PDF is not encrypted.")
             text = []
             for page in reader.pages:
                 page_text = page.extract_text()
@@ -87,17 +96,19 @@ def extract_text_from_pdf(pdf_path, password):
                     text.append(page_text)
             return "\n".join(text)
     except Exception as e:
-        print(f"Error processing PDF: {e}")
+        logger.exception("Error processing PDF")
         return None
 
+
+# --- Perplexity Extraction ---
 def extract_values_with_perplexity(text):
     api_key = PERPLEXITY_API_KEY
     if not api_key:
-        print("[Perplexity] API key not set.")
+        logger.error("Perplexity API key not set.")
         return {}
     prompt = (
         "Extract these values from the following Irish payslip text and return as a JSON object with these keys: "
-        "gross_pay, net_pay, tax, prsi, usc, payment_date, payee. "
+        "gross_pay, net_pay, tax, prsi, usc, payment_date, payer. "
         "Here is the text:\n" + text
     )
     url = "https://api.perplexity.ai/chat/completions"
@@ -114,23 +125,24 @@ def extract_values_with_perplexity(text):
         if response.status_code == 200:
             res = response.json()
             answer = res.get("choices", [{}])[0].get("message", {}).get("content", "")
-            import json
             match = re.search(r'({.*})', answer, re.DOTALL)
             if match:
                 try:
                     result = json.loads(match.group(1))
-                    print(f"[Perplexity] Extraction successful.")
+                    logger.info("Perplexity extraction successful.")
                     return result
-                except Exception:
-                    print(f"[Perplexity] JSON parsing error.")
+                except Exception as e:
+                    logger.exception("Perplexity JSON parsing error.")
             else:
-                print("[Perplexity] No JSON found in response.")
+                logger.error("No JSON found in Perplexity response.")
         else:
-            print(f"[Perplexity] API error: {response.status_code}")
-    except Exception:
-        print("[Perplexity] API call failed.")
+            logger.error(f"Perplexity API error: {response.status_code}")
+    except Exception as e:
+        logger.exception("Perplexity API call failed.")
     return {}
 
+
+# --- Google Sheets Append ---
 def append_to_google_sheet(data_dict, email_id, email_date):
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -142,7 +154,7 @@ def append_to_google_sheet(data_dict, email_id, email_date):
             email_id,
             email_date,
             data_dict.get('payment_date', ''),
-            data_dict.get('payee', ''),
+            data_dict.get('payer', ''),
             data_dict.get('gross_pay', ''),
             data_dict.get('tax', ''),
             data_dict.get('prsi', ''),
@@ -151,12 +163,12 @@ def append_to_google_sheet(data_dict, email_id, email_date):
             ''  # Processed Indicator
         ]
         sheet.append_row(row)
-        print(f"[GoogleSheet] Row appended for email UID {email_id}.")
-    except Exception:
-        print(f"[GoogleSheet] Error writing row for email UID {email_id}.")
+        logger.info(f"GoogleSheet: Row appended for email UID {email_id}.")
+    except Exception as e:
+        logger.exception(f"GoogleSheet: Error writing row for email UID {email_id}.")
+
 
 def process_email(mail, uid):
-    # Returns a tuple: (perplexity_status, google_sheet_status)
     raw_message = mail.fetch([uid], ['BODY[]', 'ENVELOPE'])
     message = pyzmail.PyzMessage.factory(raw_message[uid][b'BODY[]'])
     envelope = raw_message[uid][b'ENVELOPE']
@@ -168,34 +180,38 @@ def process_email(mail, uid):
         if part.filename and part.filename.lower().endswith('.pdf'):
             work_dir = "/app" if os.path.exists("/app") else "."
             file_path = f"{work_dir}/{part.filename}"
-            with open(file_path, 'wb') as f:
-                f.write(part.get_payload())
-            text = extract_text_from_pdf(file_path, PDF_PASSWORD)
-            if text:
-                try:
+            try:
+                with open(file_path, 'wb') as f:
+                    f.write(part.get_payload())
+                text = extract_text_from_pdf(file_path, PDF_PASSWORD)
+                if text:
                     data = extract_values_with_perplexity(text)
                     perplexity_status = "success" if data else "error"
-                except Exception:
-                    perplexity_status = "error"
-                try:
                     append_to_google_sheet(data if data else {}, email_id, email_date)
                     google_sheet_status = "success"
-                except Exception:
+                else:
+                    perplexity_status = "error"
                     google_sheet_status = "error"
-            os.remove(file_path)
+            except Exception as e:
+                logger.exception(f"Error processing email UID {email_id}")
+            finally:
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    logger.warning(f"Could not delete file {file_path}")
     return perplexity_status, google_sheet_status
 
+
 def main_loop():
-    print("[Status] Starting PDF decryption app...")
+    logger.info("Starting PDF decryption app...")
     while True:
         now = datetime.now()
         today = now.weekday()
-        # If weekend, sleep until next Monday
         if today > 4:
             days_until_monday = 7 - today
             next_run = (now + timedelta(days=days_until_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
             sleep_seconds = (next_run - now).total_seconds()
-            print(f"[Status] Weekend. Sleeping until next Monday ({next_run}) for {int(sleep_seconds)} seconds.")
+            logger.info(f"Weekend. Sleeping until next Monday ({next_run}) for {int(sleep_seconds)} seconds.")
             time.sleep(sleep_seconds)
             continue
         EMAIL_ACCOUNT_ENV = EMAIL_ACCOUNT
@@ -204,13 +220,13 @@ def main_loop():
         IMAP_SERVER_ENV = IMAP_SERVER
         FOLDERS = ['INBOX', '1. Payslips']
         if not all([EMAIL_ACCOUNT_ENV, EMAIL_PASSWORD_ENV, PDF_PASSWORD_ENV]):
-            print("[Status] ERROR: Missing required configuration.")
+            logger.error("ERROR: Missing required configuration.")
             return
-        print(f"[Status] Email: {EMAIL_ACCOUNT_ENV}")
+        logger.info(f"Email: {EMAIL_ACCOUNT_ENV}")
         processed_uids = load_processed_uids()
-        print(f"[Status] Loaded {len(processed_uids)} processed UIDs.")
+        logger.info(f"Loaded {len(processed_uids)} processed UIDs.")
         since_date = (datetime.now() - timedelta(days=30)).strftime('%d-%b-%Y')
-        print(f"[Status] Searching for emails since: {since_date}")
+        logger.info(f"Searching for emails since: {since_date}")
         try:
             with IMAPClient(IMAP_SERVER_ENV) as server:
                 server.login(EMAIL_ACCOUNT_ENV, EMAIL_PASSWORD_ENV)
@@ -220,8 +236,7 @@ def main_loop():
                         search_criteria = [u'FROM', 'payslips@brightpay.ie', u'SINCE', since_date]
                         uids = server.search(search_criteria)
                         new_uids = [uid for uid in uids if str(uid) not in processed_uids]
-                        print(f"[EmailSearch] Folder: {folder} | Total: {len(uids)} | New: {len(new_uids)}")
-                        # Summary counters
+                        logger.info(f"EmailSearch: Folder: {folder} | Total: {len(uids)} | New: {len(new_uids)}")
                         total_new_emails = 0
                         perplexity_success = 0
                         perplexity_error = 0
@@ -241,22 +256,22 @@ def main_loop():
                                     gs_success += 1
                                 else:
                                     gs_error += 1
-                            except Exception:
-                                pass
-                        print(f"[Summary] {folder}: Processed {total_new_emails} | Perplexity success: {perplexity_success}, error: {perplexity_error} | GoogleSheet success: {gs_success}, error: {gs_error}")
-                    except Exception:
-                        print(f"[EmailSearch] Error accessing folder {folder}.")
-        except Exception:
-            print(f"[Status] Error in main loop.")
-        print("[Status] Finished processing for today.")
-        # Sleep until next weekday (skip weekends)
+                            except Exception as e:
+                                logger.exception(f"Error processing UID {uid}")
+                        logger.info(f"Summary: {folder}: Processed {total_new_emails} | Perplexity success: {perplexity_success}, error: {perplexity_error} | GoogleSheet success: {gs_success}, error: {gs_error}")
+                    except Exception as e:
+                        logger.exception(f"EmailSearch: Error accessing folder {folder}.")
+        except Exception as e:
+            logger.exception("Error in main loop.")
+        logger.info("Finished processing for today.")
         next_run = now + timedelta(days=1)
         while next_run.weekday() > 4:
             next_run += timedelta(days=1)
         next_run = next_run.replace(hour=0, minute=0, second=0, microsecond=0)
         sleep_seconds = (next_run - now).total_seconds()
-        print(f"[Status] Sleeping until next weekday ({next_run}) for {int(sleep_seconds)} seconds.")
+        logger.info(f"Sleeping until next weekday ({next_run}) for {int(sleep_seconds)} seconds.")
         time.sleep(sleep_seconds)
+
 
 if __name__ == '__main__':
     main_loop()
