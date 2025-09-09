@@ -10,19 +10,30 @@ This project automates the extraction of key payroll data from PDF payslips rece
 - Appends extracted data to a specified Google Spreadsheet
 - Tracks processed emails to avoid duplicates
 
+
 ## Setup
 
 1. **Clone the repository.**
 2. **Create a `.env` file in the `app/` directory.**  
    Use `.env.template` as a reference and fill in your credentials and API keys.
-3. **Install dependencies:**  
-   Run `pip install -r requirements.txt` in the `app/` directory.
-4. **Add your Google service account credentials:**  
+3. **Add your Google service account credentials:**  
    Place your `credentials.json` file in the `app/` directory.
+
+## Running with Poetry
+
+If you want to run locally (without Docker), install [Poetry](https://python-poetry.org/) and dependencies:
+
+```powershell
 
 ## Environment Variables
 
 Copy `.env.template` to `.env` and fill in the following values:
+
+## Running with Docker
+
+Build and run the containerized app:
+
+```powershell
 
 ```
 EMAIL_ACCOUNT=
@@ -33,15 +44,10 @@ PERPLEXITY_API_KEY=
 SPREADSHEET_URL=
 ```
 
+
 ## Usage
 
-Run the main script:
-
-```powershell
-python app/main.py
-```
-
-The script will process new payslip emails and update your Google Spreadsheet automatically.
+The script will process new payslip emails and update your Google Spreadsheet automatically, whether run via Poetry or Docker.
 
 ## Security
 

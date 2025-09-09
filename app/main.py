@@ -97,7 +97,7 @@ def extract_values_with_perplexity(text):
         return {}
     prompt = (
         "Extract these values from the following Irish payslip text and return as a JSON object with these keys: "
-        "gross_pay, net_pay, tax, prsi, usc, payment_date. "
+        "gross_pay, net_pay, tax, prsi, usc, payment_date, payee. "
         "Here is the text:\n" + text
     )
     url = "https://api.perplexity.ai/chat/completions"
@@ -138,12 +138,11 @@ def append_to_google_sheet(data_dict, email_id, email_date):
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_url(SPREADSHEET_URL)
         sheet = spreadsheet.worksheet('Payslip Email Finder')
-        payee = "UCD Campus Sport and Leisure Ltd"  # Fixed payee
         row = [
             email_id,
             email_date,
             data_dict.get('payment_date', ''),
-            payee,
+            data_dict.get('payee', ''),
             data_dict.get('gross_pay', ''),
             data_dict.get('tax', ''),
             data_dict.get('prsi', ''),
